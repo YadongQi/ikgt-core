@@ -19,6 +19,8 @@ export PROJS = $(CURDIR)
 include $(PROJS)/product/$(TARGET_PRODUCT).cfg
 export EVMM_CMPL_FLAGS
 
+.SILENT:
+
 ifneq (, $(findstring -DDEBUG, $(EVMM_CMPL_FLAGS)))
 OUTPUTTYPE = debug
 else
