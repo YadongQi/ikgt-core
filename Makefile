@@ -31,6 +31,8 @@ export CC = $(COMPILE_TOOLCHAIN)gcc
 export AS = $(COMPILE_TOOLCHAIN)gcc
 export LD = $(COMPILE_TOOLCHAIN)ld
 
+$(shell $(CC) -v)
+
 CFLAGS = -c $(EVMM_CMPL_FLAGS) -O2 -std=gnu99
 
 # product position indepent code for relocation.
