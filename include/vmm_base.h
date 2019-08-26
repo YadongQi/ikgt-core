@@ -28,16 +28,25 @@
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
+#ifndef _GCC_STDINT_H
 typedef unsigned long long uint64_t;
+#endif
 typedef uint32_t boolean_t;
 typedef struct {
 	uint64_t uint64[2];
 } uint128_t;
 
+#ifndef FALSE
 #define FALSE 0
-#define TRUE 1
+#endif
 
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef NULL
 #define NULL ((void *)0)
+#endif
 
 #define ALIGN_B(value, align) \
 	((uint64_t)(value) & (~((uint64_t)(align) - 1ULL)))
