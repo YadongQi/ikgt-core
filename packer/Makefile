@@ -44,12 +44,23 @@ COBJS = $(addprefix $(OUTDIR), $(notdir $(patsubst %.c, %.o, $(CSOURCES))))
 ifneq (, $(findstring efi_loader, $(LOADER_STAGE0_SUB)))
 all:
 
+ADDITIONAL_SECTIONS :=
+
+ifneq (, $(findstring -DPACK_LK, $(EVMM_CMPL_FLAGS)))
+ADDITIONAL_SECTIONS += --add-section .lk="$(BUILD_DIR)/lk.elf" --set-section-flags .lk=alloc,data,contents,load --change-section-vma .lk=0x100000
+endif
+
 pack:
+ifneq (, $(findstring -DPACK_LK, $(EVMM_CMPL_FLAGS)))
+	if [ $(LKBIN_DIR) ]; then cp $(LKBIN_DIR)lk.elf $(BUILD_DIR); fi
+endif
+
 	@echo Pack \"stage1.bin evmm.elf stage0.efi\" into $(patsubst %.bin,%.efi,$(PACKAGE))
 	$(OBJCOPY) --add-section .stage1="$(BUILD_DIR)/stage1.bin" --set-section-flags .stage1=alloc,data,contents,load --change-section-vma .stage1=0x20000 \
-		--add-section .evmm="$(BUILD_DIR)/evmm.elf" --set-section-flags .evmm=alloc,data,contents,load --change-section-vma .evmm=0x30000 \
-		--section-alignment 0x1000 \
-		$(BUILD_DIR)/stage0.efi $(BUILD_DIR)/$(patsubst %.bin,%.efi,$(PACKAGE))
+		   --add-section .evmm="$(BUILD_DIR)/evmm.elf" --set-section-flags .evmm=alloc,data,contents,load --change-section-vma .evmm=0x30000 \
+		   $(ADDITIONAL_SECTIONS) \
+		   --section-alignment 0x1000 \
+		   $(BUILD_DIR)/stage0.efi $(BUILD_DIR)/$(patsubst %.bin,%.efi,$(PACKAGE))
 else
 
 #

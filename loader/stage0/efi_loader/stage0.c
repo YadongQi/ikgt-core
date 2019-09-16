@@ -261,11 +261,24 @@ static EFI_STATUS continue_boot(EFI_LOADED_IMAGE *image, EFI_HANDLE image_handle
 	return EFI_SUCCESS;
 }
 
+static void make_dummy_dev_sec_info(void *info)
+{
+	device_sec_info_v0_t *device_sec_info = (device_sec_info_v0_t *)info;
+
+	ZeroMem(device_sec_info, sizeof(device_sec_info_v0_t));
+
+	device_sec_info->size_of_this_struct = sizeof(device_sec_info_v0_t);
+	device_sec_info->version = 0;
+	device_sec_info->platform = 0;
+	device_sec_info->num_seeds = 1;
+}
+
 /* Temp STACK for stage1 to launch APs */
 #define AP_TEMP_STACK_SIZE            (0x400U * ((MAX_CPU_NUM) + 1U))
 #define STAGE1_RT_SIZE                (0xA000U + (AP_TEMP_STACK_SIZE))
 
 #define EVMM_RUNTIME_SIZE 0x1000000U
+#define TEE_RUNTIME_SIZE  0x1000000U
 
 extern const uint64_t return_address;
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *_table)
@@ -350,6 +363,33 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *_table)
 		return status;
 	}
 	evmm_desc->sipi_ap_wkup_addr = mem_addr;
+
+#ifdef MODULE_TRUSTY_TEE
+	/* get lk */
+	if (!parse_pe_section(info->ImageBase, ".lk", 3, &sec_vma, &sec_len)) {
+		Print(L"Failed to parse lk\n");
+		return EFI_LOAD_ERROR;
+	}
+	evmm_desc->trusty_tee_desc.tee_file.loadtime_addr = ((UINTN)(info->ImageBase)) + sec_vma;
+	evmm_desc->trusty_tee_desc.tee_file.loadtime_size = sec_len;
+
+	status = uefi_call_wrapper(gBS->AllocatePages, 4, AllocateAnyPages, EfiReservedMemoryType, EFI_SIZE_TO_PAGES(TEE_RUNTIME_SIZE), &mem_addr);
+	if (status != EFI_SUCCESS) {
+		Print(L"allocate memory for lk failed!, error=%d\n", status);
+		return status;
+	}
+	evmm_desc->trusty_tee_desc.tee_file.runtime_addr = mem_addr;
+	evmm_desc->trusty_tee_desc.tee_file.runtime_total_size = TEE_RUNTIME_SIZE;
+
+	/*  */
+	status = uefi_call_wrapper(gBS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, EFI_SIZE_TO_PAGES(sizeof(device_sec_info_v0_t)), &mem_addr);
+	if (status != EFI_SUCCESS) {
+		Print(L"allocate memory for device sec info failed!, error=%d\n", status);
+		return status;
+	}
+	evmm_desc->trusty_tee_desc.dev_sec_info = (void *)mem_addr;
+	make_dummy_dev_sec_info(evmm_desc->trusty_tee_desc.dev_sec_info);
+#endif
 
 	/* others */
 	evmm_desc->tsc_per_ms = get_tsc_per_ms();
