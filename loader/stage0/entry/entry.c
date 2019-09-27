@@ -59,7 +59,11 @@ uint32_t entry_main(
 	uint64_t ret = -1;
 	module_file_info_t stage0_elf_file;
 
+#ifdef SERIAL_SETUP
+	print_init(TRUE);
+#else
 	print_init(FALSE);
+#endif
 
 	get_stage0_elf(stage0_ld_base, stage0_rt_base, header->file_size[STAGE0_BIN_INDEX], &stage0_elf_file);
 
