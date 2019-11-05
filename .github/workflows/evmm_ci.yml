@@ -1,0 +1,195 @@
+name: EVMM CI
+on: [push, pull_request]
+env:
+  LK_RELEASE_BIN: https://github.com/projectceladon/trusty-release-binaries/raw/master/lk.bin
+  ARTI_PATH: build
+
+jobs:
+  builds_ubuntu_gcc:
+    name: Build with Ubuntu GCC
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04]
+        gcc_version: [5, 6, 7, 8]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: download lk & gcc
+        run: |
+          if [ ! -f lk.bin ]; then
+            curl -JLO $LK_RELEASE_BIN;
+          fi
+          sudo apt-get --quiet install --yes gcc-${{ matrix.gcc_version }}
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${{ matrix.gcc_version }} 10
+          sudo update-alternatives --set gcc /usr/bin/gcc-${{ matrix.gcc_version }}
+      - name: build(Ubuntu GCC)
+        run: |
+          gcc --version
+          export LKBIN_DIR=$GITHUB_WORKSPACE/
+          export BUILD_DIR=$GITHUB_WORKSPACE/$ARTI_PATH/
+          make clean && make -j$(nproc)
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_pub.gcc-${{ matrix.gcc_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
+
+  builds_official_llvm:
+    name: Build with Official LLVM
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04]
+        llvm_version: [default, 8, 9]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: download lk & setup llvm
+        run: |
+          if [ ! -f lk.bin ]; then
+            curl -JLO $LK_RELEASE_BIN;
+          fi
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          cd $GITHUB_WORKSPACE/toolchain
+          wget https://apt.llvm.org/llvm.sh
+          if [ ${{ matrix.llvm_version }} == "default" ]; then
+            export LLVM_VERSION=$(sed -n 's/^LLVM_VERSION=//p' llvm.sh)
+          else
+            export LLVM_VERSION=${{ matrix.llvm_version }}
+          fi
+          sudo bash llvm.sh $LLVM_VERSION
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-$LLVM_VERSION 10
+          sudo update-alternatives --set clang /usr/bin/clang-$LLVM_VERSION
+          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-$LLVM_VERSION 10
+          sudo update-alternatives --set ld.lld /usr/bin/ld.lld-$LLVM_VERSION
+          cd $GITHUB_WORKSPACE
+      - name: build(Official LLVM)
+        run: |
+          export LKBIN_DIR=$GITHUB_WORKSPACE/
+          export BUILD_DIR=$GITHUB_WORKSPACE/$ARTI_PATH/
+          export CLANG_BINDIR=$(which clang | xargs dirname)
+          make clean && make -j$(nproc)
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_pub.official_clang-${{ matrix.llvm_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
+
+  builds_android-10_llvm:
+    name: Build with Android(10-release) LLVM
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04]
+        llvm_version: [r353983c, r353983b, r349610b]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: download lk & llvm
+        run: |
+          if [ ! -f lk.bin ]; then
+            curl -JLO $LK_RELEASE_BIN;
+          fi
+          mkdir -p $GITHUB_WORKSPACE/toolchain/linux-x86
+          cd $GITHUB_WORKSPACE/toolchain/linux-x86
+          git init
+          git remote add aosp https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git fetch aosp android10-release --depth=1
+          git checkout android10-release
+          cd $GITHUB_WORKSPACE
+      - name: build(Android LLVM)
+        run: |
+          export LKBIN_DIR=$GITHUB_WORKSPACE/
+          export BUILD_DIR=$GITHUB_WORKSPACE/$ARTI_PATH/
+          export CLANG_BINDIR=$GITHUB_WORKSPACE/toolchain/linux-x86/clang-${{ matrix.llvm_version }}/bin/
+          make clean && make -j$(nproc)
+      - name: Setup python 3.7
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+      - name: generate tos.img.unsigned
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+
+          cd $GITHUB_WORKSPACE/toolchain/
+          git clone https://android.googlesource.com/platform/system/tools/mkbootimg
+          cd mkbootimg
+          pyinstaller mkbootimg.py --onefile
+          cd ../../
+          ./toolchain/mkbootimg/dist/mkbootimg --kernel build/evmm_lk_pkg.bin -o build/tos.img.unsigned
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_pub.android10_clang-${{ matrix.llvm_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
+
+  builds_android-9_llvm:
+    name: Build with Android(9-release) LLVM
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04]
+        llvm_version: [4691093, 4639204]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: download lk & llvm
+        run: |
+          if [ ! -f lk.bin ]; then
+            curl -JLO $LK_RELEASE_BIN;
+          fi
+          mkdir -p $GITHUB_WORKSPACE/toolchain/linux-x86
+          cd $GITHUB_WORKSPACE/toolchain/linux-x86
+          git init
+          git remote add aosp https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git fetch aosp pie-release --depth=1
+          git checkout pie-release
+          cd $GITHUB_WORKSPACE
+      - name: build(Android LLVM)
+        run: |
+          export LKBIN_DIR=$GITHUB_WORKSPACE/
+          export BUILD_DIR=$GITHUB_WORKSPACE/$ARTI_PATH/
+          export CLANG_BINDIR=$GITHUB_WORKSPACE/toolchain/linux-x86/clang-${{ matrix.llvm_version }}/bin/
+          make clean && make -j$(nproc)
+      - name: Setup python 3.7
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+      - name: generate tos.img.unsigned
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+
+          cd $GITHUB_WORKSPACE/toolchain/
+          git clone https://android.googlesource.com/platform/system/tools/mkbootimg
+          cd mkbootimg
+          pyinstaller mkbootimg.py --onefile
+          cd ../../
+          ./toolchain/mkbootimg/dist/mkbootimg --kernel build/evmm_lk_pkg.bin -o build/tos.img.unsigned
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_pub.android9_clang-${{ matrix.llvm_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
