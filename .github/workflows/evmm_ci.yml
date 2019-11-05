@@ -1,0 +1,113 @@
+name: EVMM CI
+on: [push, pull_request]
+env:
+  LK_RELEASE_BIN: https://github.com/projectceladon/trusty-release-binaries/blob/master/lk.bin
+  ARTI_PATH: build
+
+jobs:
+  builds_default_gcc:
+    name: Build with default GCC
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-16.04]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: download lk
+        run: |
+          if [ ! -f lk.bin ]; then
+            wget $LK_RELEASE_BIN;
+          fi
+      - name: build(default GCC)
+        run: |
+          gcc --version
+          export LKBIN_DIR=$PWD/
+          export BUILD_DIR=$PWD/$ARTI_PATH/
+          make clean && make -j$(nproc)
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_default_gcc.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
+  builds_android_llvm:
+    name: Build with Android LLVM
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+        llvm_version: [r353983c, r353983c1, r365631c, r370808, r370808b, r377782]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: download lk & llvm
+        run: |
+          if [ ! -f lk.bin ]; then
+            wget $LK_RELEASE_BIN;
+          fi
+          mkdir -p $(pwd)/toolchain
+          cd $PWD/toolchain
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          cd -
+      - name: build(Android LLVM)
+        run: |
+          export LKBIN_DIR=$PWD/
+          export BUILD_DIR=$PWD/$ARTI_PATH/
+          export CLANG_BINDIR=$PWD/toolchain/linux-x86/clang-${{ matrix.llvm_version }}/bin/
+          make clean && make -j$(nproc)
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_android_clang-${{ matrix.llvm_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
+  builds_official_llvm:
+    name: Build with Official LLVM
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        trusty_ref_target: [celadon_64]
+        boot_arch: [efi]
+        llvm_version: [8, 9]
+    env:
+      TRUSTY_REF_TARGET: ${{ matrix.trusty_ref_target }}
+      BOOT_ARCH: ${{ matrix.boot_arch }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: download lk & setup llvm
+        run: |
+          if [ ! -f lk.bin ]; then
+            wget $LK_RELEASE_BIN;
+          fi
+          mkdir -p $PWD/toolchain
+          cd $PWD/toolchain
+          if [ ${{ matrix.llvm_version }} == "default" ]; then
+            export LLVM_VERSION=$(sed -n 's/^LLVM_VERSION=//p' llvm.sh)
+          else
+            export LLVM_VERSION=${{ matrix.llvm_version }}
+          fi
+          wget https://apt.llvm.org/llvm.sh && sudo bash llvm.sh $LLVM_VERSION
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-$LLVM_VERSION 10
+          sudo update-alternatives --set clang /usr/bin/clang-$LLVM_VERSION
+          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-$LLVM_VERSION 10
+          sudo update-alternatives --set ld.lld /usr/bin/ld.lld-$LLVM_VERSION
+          cd -
+      - name: build(Official LLVM)
+        run: |
+          export LKBIN_DIR=$PWD/
+          export BUILD_DIR=$PWD/$ARTI_PATH/
+          export CLANG_BINDIR=/usr/bin/
+          make clean && make -j1
+      - name: artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: evmm_official_clang-${{ matrix.llvm_version }}.${{ matrix.os }}.${{ matrix.boot_arch }}.${{ matrix.trusty_ref_target }}
+          path: build/
