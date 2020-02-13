@@ -91,6 +91,19 @@ CFLAGS += -funsigned-bitfields
 
 # Do not assume that signed overflow does not occur
 CFLAGS += -fno-strict-overflow
+else
+
+# Clang version less than 7 did not support "-fno-delete-null-pointer-checks flags"
+MAJOR_VER := $(shell echo '$(CC_VERSION)' |\
+               head -1 |\
+               sed -n 's/.*clang version \([[:digit:]]\.[[:digit:]]\.[[:digit:]]\).*/\1/p' |\
+               head -c 1)
+
+ifeq ($(shell test $(MAJOR_VER) -lt 7; echo $$?), 0)
+TMP_CFLAGS := $(CFLAGS)
+CFLAGS=$(filter-out -fno-delete-null-pointer-checks,$(TMP_CFLAGS))
+endif
+
 endif
 
 AFLAGS = -c -m64 $(EVMM_CMPL_FLAGS) -fPIC -static -nostdinc
